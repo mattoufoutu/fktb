@@ -2,41 +2,133 @@
 # Julien Deudon (initbrain) & Geoffrey Robert (mks)
 # Free-knowledge Toolbox v0.2.3 du 20/06/2012
 
+# Gestion des importations
+
+import_error = ""                                # Variable de stockage des erreurs d'importation
+
+import smtplib                                # <-
+from email.MIMEMultipart import MIMEMultipart                #  |
+from email.MIMEBase import MIMEBase                    #  Module utilisés pour l'envoi de mail
+from email.MIMEText import MIMEText                    #  |
+from email.Utils import COMMASPACE, formatdate                #  |
+from email import Encoders
+
+# Modules utilisés pour l'interface graphique
+try:
+    import pygtk
+except ImportError:
+    import_error += "\npygtk 2.3.90 ou ultérieur"
+try:
+    import gtk
+except ImportError:
+    import_error += "\ngtk"
+else:
+    if gtk.pygtk_version < (2, 3, 90) and import_error == "":
+        import_error += "\npygtk 2.3.90 ou ultérieur"
+
+try: import httplib2                            # Module utilisé pour effectuer des requêtes HTTP
+except ImportError: import_error += "\nhttplib2"
+try: import Image                            # Module utilisé par le module Couche RVB (stéganographie)
+except ImportError: import_error += "\nPIL (Image)"
+try: import re                                # Module utilisé pour le parsage (expressions rationnelles)
+except ImportError: import_error += "\nre"
+try: import webbrowser                            # Module permettant d'ouvrir le navigateur web
+except ImportError: import_error += "\nwebbrowser"
+try: from commands import getoutput, getstatusoutput            # Module utilisé pour récupérer la sortie d'une commande
+except ImportError: import_error += "\ncommands"
+try: import hashlib                            # Module utilisé pour le hashage de textes ou fichiers
+except ImportError: import_error += "\nhashlib"
+try: import thread                            # Module pour le multithreading
+except ImportError: import_error += "\nthread"
+try: import subprocess                            # Module permettant de créer des sous-processus
+except ImportError: import_error += "\nsubprocess"
+try: from urllib import urlencode                    # Module utilisé pour encoder des paramètres dans une URL
+except ImportError: import_error += "\nurllib"
+try: import urllib2                            # Module utilisé pour envoyer des requete aux API Google
+except ImportError: import_error += "\nurllib2"
+try: from time import *                            # Modules pour la vitesse du mouvement de la progressbar et
+except ImportError: import_error += "\ntime"                # le calcul du temps pris par un traitement
+
+try: import os                                # Module utilisé pour éxecuter des commandes
+except ImportError: import_error += "\nos"                # et récupérer des informations d'environnement
+
+try: import pynotify                            # Module utilisé pour afficher des notifications
+except ImportError: import_error += "\npython-notify"
+
+try: import simplejson                            # <-
+except ImportError: import_error += "\nsimplejson"            #  |
+try: import sys                                #  |
+except ImportError: import_error += "\nsys"                #  Modules utilisés pour la géolocalisation
+try: import os.path                            #  |
+except ImportError: import_error += "\nos.path"                #  |
+try: import gobject                            #  |
+except ImportError: import_error += "\ngobject"                # <-
+
+try:
+    #Try static lib first
+    mydir = os.path.dirname(os.path.abspath(__file__))
+    libdir = os.path.abspath(os.path.join(mydir, "..", "python", ".libs"))
+    sys.path.insert(0, libdir)
+
+    import osmgpsmap                        # Module utilisé pour afficher une OpenStreetMap
+except ImportError: import_error += "\nosmgpsmap"
+#else: print "Utilisation de osmgpsmap : %s (version %s)" % (osmgpsmap.__file__, osmgpsmap.__version__)
+
+try: import csv                                # Module utilisé pour lire les logs de airodump-ng
+except ImportError: import_error += "\ncsv"
+
+# Gestion des éventuelles erreurs d'importation
+
+if import_error != "":
+    print "Il est nécessaire de posséder les librairies suivantes pour faire fonctionner cette boîte à outils :" + import_error
+    raise SystemExit
+
+# Import modules
+from fktb.lib.network import wifi
+from fktb.lib.other import google
+
+# Configurations
+
+from fktb.core.constants import FKTB_PATH, CONFIG_PATH
+
+gtk.gdk.threads_init() # Important : initialisation pour l'utilisation de threads
+gtk.gdk.threads_enter()
+
 class toolbox:
 
 # Recherche de mise à jour
 
-    def checkUpdate(self, param=None):
-        """Vérifie les mises à jourm
-        Parse le site google code pour récupérer la version la plus récente
-        et la compare avec la version actuellement utilisée.
-        """
-        msg=''
-        type_msg=0
-        version = "0.2.3"
-        cnx = httplib2.Http()
-        try: ret = self.requete_http(cnx, "GET", "http://code.google.com/p/initbrain-toolbox/")
-        except: msg,type_msg="Impossible de rechercher les mises à jour :\nla connexion à Google Code a échoué.",1
-        else:
-            res = re.compile('itemprop="description">v(.+) - NOUVEAU NOM : free-knowledge toolbox !</span>', re.MULTILINE).findall(ret)
-            if not res: msg,type_msg="Impossible de rechercher les mises à jour :\nproblème avec la récupération de la version actuelle.",1
-            else:
-                for indice_ver in range(0,3):
-                    if version.split('.')[indice_ver] < res[0].split('.')[indice_ver]:
-                        msg="Une version plus récente est disponible !\n\nVersion utilisée : "+version+"\nVersion actuelle : "+res[0]+"\n\nRendez-vous sur :\nhttp://code.google.com/p/initbrain-toolbox/"
-                        break
-                    elif version.split('.')[indice_ver] > res[0].split('.')[indice_ver]:
-                        msg="Vous disposez d'une prerelease ^^\n\nVersion officielle : "+res[0]+"\nVersion utilisée : "+version
-                        break
-                    elif indice_ver==2: msg="Pas de mises à jour disponibles.\n\nVersion actuelle : "+res[0]
+    # def checkUpdate(self, param=None):
+    #     """Vérifie les mises à jour
+    #     Parse le site google code pour récupérer la version la plus récente
+    #     et la compare avec la version actuellement utilisée.
+    #     """
+    #     msg=''
+    #     type_msg=0
+    #     version = "0.2.3"
+    #     cnx = httplib2.Http()
+    #     try: ret = self.requete_http(cnx, "GET", "http://code.google.com/p/initbrain-toolbox/")
+    #     except: msg,type_msg="Impossible de rechercher les mises à jour :\nla connexion à Google Code a échoué.",1
+    #     else:
+    #         res = re.compile('itemprop="description">v(.+) - NOUVEAU NOM : free-knowledge toolbox !</span>', re.MULTILINE).findall(ret)
+    #         if not res: msg,type_msg="Impossible de rechercher les mises à jour :\nproblème avec la récupération de la version actuelle.",1
+    #         else:
+    #             for indice_ver in range(0,3):
+    #                 if version.split('.')[indice_ver] < res[0].split('.')[indice_ver]:
+    #                     msg="Une version plus récente est disponible !\n\nVersion utilisée : "+version+"\nVersion actuelle : "+res[0]+"\n\nRendez-vous sur :\nhttp://code.google.com/p/initbrain-toolbox/"
+    #                     break
+    #                 elif version.split('.')[indice_ver] > res[0].split('.')[indice_ver]:
+    #                     msg="Vous disposez d'une prerelease ^^\n\nVersion officielle : "+res[0]+"\nVersion utilisée : "+version
+    #                     break
+    #                 elif indice_ver==2: msg="Pas de mises à jour disponibles.\n\nVersion actuelle : "+res[0]
+    #
+    #     # Bloquer la boucle principale juste le temps d'afficher une alerte
+    #     # Exemple : http://aruiz.typepad.com/siliconisland/2006/04/threads_on_pygt.html
+    #     gtk.gdk.threads_enter()
+    #     self.msgbox(msg,type_msg)
+    #     gtk.gdk.threads_leave()
 
-        # Bloquer la boucle principale juste le temps d'afficher une alerte
-        # Exemple : http://aruiz.typepad.com/siliconisland/2006/04/threads_on_pygt.html
-        gtk.gdk.threads_enter()
-        self.msgbox(msg,type_msg)
-        gtk.gdk.threads_leave()
-
-    # Récupérer les interfaces réseaux sans-fil (wireless) actives
+# Récupérer les interfaces réseaux sans-fil (wireless) actives
 
     def getWIface(self):
         res=re.compile("^([\w\d]+).*?IEEE.*?\n", re.MULTILINE).findall(getoutput("iwconfig"))
@@ -67,7 +159,7 @@ class toolbox:
             return infos
         else: return 0
 
-    # Threading
+# Threading
 
     def mkThreadMd5(self, parent):
         """Démarre un thread pour la fonction checkmd5_online"""
@@ -107,7 +199,8 @@ class toolbox:
             gtk.gdk.threads_leave()
         else: getstatusoutput(su_gui_cmd+" 'killall airodump-ng'")
 
-        if os.path.exists(fktb_path+"tmp/airodump-ng-01.csv"): os.remove(fktb_path+"tmp/airodump-ng-01.csv")
+        if os.path.exists("%s/tmp/airodump-ng-01.csv" % FKTB_PATH):
+            os.remove("%s/tmp/airodump-ng-01.csv" % FKTB_PATH)
 
         self.progressbarWifi2.set_fraction(0)
         self.progressbarWifi2.set_text("En attente ...")
@@ -137,7 +230,7 @@ class toolbox:
         """Démarre un thread pour la fonction sumfile"""
         t_sum = thread.start_new_thread(self.sumfile, ())
 
-    # CESAR
+# CESAR
 
     def chiffrement(self, texte, cle, alphabet):
         """Fonction éffectuant un chiffrement César"""
@@ -180,7 +273,6 @@ class toolbox:
                 cesar=cesar+alphabet[position].upper()
             else:
                 cesar=cesar+lettre
-
         return cesar
 
     def decryptage(self, texte, alphabet):
@@ -266,7 +358,7 @@ class toolbox:
         elif self.btn_radio_dech_inco.get_active():
             txtbuf_sortie.insert(start_iter_sortie, self.decryptage(txt_entree,self.entry_alphabet_cesar.get_text()))
 
-        # SUBSTITUTION MONO-ALPHABETIQUE
+# SUBSTITUTION MONO-ALPHABETIQUE
 
     def checkSubstMonoAlpha(self, widget):
         # Buffer et texte d'entrée
@@ -297,7 +389,7 @@ class toolbox:
             # Écrire en sortie
             txtbuf_sortie_substma.insert(start_iter_sortie_substma, texte_substitue)
 
-        # HASH
+# HASH
 
     def calcHash(self, widget):
         """Permet de calculer le hash coorespondant aux choix que l'utilisateur a exprimé via l'interface graphique
@@ -425,7 +517,7 @@ class toolbox:
                 self.entry_fichier_hash.set_sensitive(True)
                 self.btn_fichier_hash.set_sensitive(True)
 
-            # MD5
+# MD5
 
     def check_kalkulators(self, hash):
         """Parsage du site kalkulators"""
@@ -676,15 +768,16 @@ class toolbox:
 
         # Affichage d'une notification
         if pynotify.init("Free-knowledge Toolbox"):
-            n = pynotify.Notification("Free-knowledge Toolbox", "MD5 - Recherche terminée", fktb_path+"images/icone.png")
+            n = pynotify.Notification("Free-knowledge Toolbox", "MD5 - Recherche terminée", "%s/images/icone.png" % FKTB_PATH)
             if not n.show(): print "échec de notification ..."
         else:
-            if "not found" in getoutput('notify-send -i '+fktb_path+'images/icone.png -t 0 "Free-knowledge Toolbox" "MD5 - Recherche terminée"'): print "notify-send n'est pas installé ..."
+            if "not found" in getoutput('notify-send -i %s/images/icone.png -t 0 "Free-knowledge Toolbox" "MD5 - Recherche terminée"' % FKTB_PATH):
+                print "notify-send n'est pas installé ..."
 
         # Réactivation du boutton de validation
         self.btn_checkmd5.set_sensitive(True)
 
-    # REGEX WEB
+# REGEX WEB
 
     def regex_http(self, widget):
         page_web = self.entry_url_wregex.get_text()
@@ -734,7 +827,7 @@ class toolbox:
                 self.label_result_wregex.hide()
                 self.label_result_wregex.show()
 
-            # MAIL
+# MAIL
 
     def envoyer_mail(self,date_envoi_mail):
         # Récupération de l'adresse mail de l'émetteur
@@ -798,10 +891,10 @@ class toolbox:
 
                 # Affichage d'une notification
                 if pynotify.init("Free-knowledge Toolbox"):
-                    n = pynotify.Notification("Free-knowledge Toolbox", "Mail - Erreur d\'envoi", fktb_path+"images/icone.png")
+                    n = pynotify.Notification("Free-knowledge Toolbox", "Mail - Erreur d\'envoi", "%s/images/icone.png" % FKTB_PATH)
                     if not n.show(): print "échec de notification ..."
                 else:
-                    if "not found" in getoutput('notify-send -i '+fktb_path+'images/icone.png -t 0 "Free-knowledge Toolbox" "Mail - Erreur d\'envoi"'):
+                    if "not found" in getoutput('notify-send -i %s/images/icone.png -t 0 "Free-knowledge Toolbox" "Mail - Erreur d\'envoi"' % FKTB_PATH):
                         print "notify-send n'est pas installé ..."
 
                 # Réactivation du boutton de validation
@@ -813,10 +906,10 @@ class toolbox:
                 if str(i) == nombre_envoi:
                     # Affichage d'une notification
                     if pynotify.init("Free-knowledge Toolbox"):
-                        n = pynotify.Notification("Free-knowledge Toolbox", "Mail - Envoi terminé", fktb_path+"images/icone.png")
+                        n = pynotify.Notification("Free-knowledge Toolbox", "Mail - Envoi terminé", "%s/images/icone.png" % FKTB_PATH)
                         if not n.show(): print "échec de notification ..."
                     else:
-                        if "not found" in getoutput('notify-send -i '+fktb_path+'images/icone.png -t 0 "Free-knowledge Toolbox" "Mail - Envoi terminé"'):
+                        if "not found" in getoutput('notify-send -i %s/images/icone.png -t 0 "Free-knowledge Toolbox" "Mail - Envoi terminé"' % FKTB_PATH):
                             print "notify-send n'est pas installé ..."
                 i=i+1
 
@@ -830,7 +923,7 @@ class toolbox:
         # Réactivation du boutton de validation
         self.btn_env_mail.set_sensitive(True)
 
-    # STRINGS
+# STRINGS
 
     def stringsFichier(self, parent):
         #self.entry_strings.set_text(self.dialogueOuvrirStrings())
@@ -867,7 +960,7 @@ class toolbox:
         else:
             self.dialogueOuvrirStrings("")
 
-        # ASM
+# ASM
 
     def asm2human(self, parent):
         app_path = self.entry_bin_asm.get_text().replace(' ','\ ')
@@ -929,7 +1022,7 @@ class toolbox:
                 self.asm2human("")
         else : self.warnDialog("Veuillez entrer le nom d'une fonction à désassembler")
 
-    # COUCHES RVB
+# COUCHES RVB
 
     def hideMsg(self, widget=None):
         try:
@@ -972,7 +1065,7 @@ class toolbox:
                         v[j]=2*int(v[j]//2)+int(long_msg_bin[j])
                     elif self.btn_radio_bleu_c_rgb.get_active():
                         b[j]=2*int(b[j]//2)+int(long_msg_bin[j])
-                    # On code la chaine dans les pixels suivants
+                        # On code la chaine dans les pixels suivants
                 for i in range(8*long_msg):
                     if self.btn_radio_rouge_c_rgb.get_active():
                         r[i+8]=2*int(r[i+8]//2)+int(msg_bin[i])
@@ -980,7 +1073,7 @@ class toolbox:
                         v[i+8]=2*int(v[i+8]//2)+int(msg_bin[i])
                     elif self.btn_radio_bleu_c_rgb.get_active():
                         b[i+8]=2*int(b[i+8]//2)+int(msg_bin[i])
-                    # On recrée l'image rouge
+                        # On recrée l'image rouge
                 if self.btn_radio_rouge_c_rgb.get_active():
                     nr = Image.new("L",(w,h))
                     nr.putdata(r)
@@ -996,11 +1089,11 @@ class toolbox:
                     nb.putdata(b)
                     # Fusion des trois nouvelles images
                     imgnew = Image.merge('RGB',(r,v,nb))
-                imgnew.save(fktb_path+"tmp/result_stega.png")
+                imgnew.save("%s/tmp/result_stega.png" % FKTB_PATH)
 
                 # On affiche l'image
                 self.img_result = gtk.Image()
-                self.img_result.set_from_file(fktb_path+"tmp/result_stega.png")
+                self.img_result.set_from_file("%s/tmp/result_stega.png" % FKTB_PATH)
                 self.scrolled_img_result_c_rgb.add_with_viewport(self.img_result)
                 self.img_result.show()
 
@@ -1215,7 +1308,7 @@ class toolbox:
                 txtbuf_texte_c_rgb.delete(start_iter_texte_c_rgb, end_iter_texte_c_rgb)
                 txtbuf_texte_c_rgb.insert(start_iter_texte_c_rgb, self.result_read_stega['b'])
 
-            # NOT
+# NOT
 
     def opNot(self, file_path):
         self.btn_img_op_not.set_sensitive(False)
@@ -1245,11 +1338,11 @@ class toolbox:
                 gtk.gdk.threads_leave()
 
         # Écriture du binaire dans le fichier binaire_zenk_dev2
-        output = open(fktb_path+"tmp/result_opnot",'wb')
+        output = open("%s/tmp/result_opnot" % FKTB_PATH,'wb')
         output.write(data)
         output.close()
 
-        self.label_out_file_op_not.set_text("Fichier en sortie : ("+getoutput('file -b '+fktb_path+'tmp/result_opnot')+")")
+        self.label_out_file_op_not.set_text("Fichier en sortie : ("+getoutput('file -b %s/tmp/result_opnot' % FKTB_PATH)+")")
 
         self.btn_img_op_not.set_sensitive(True)
         self.btn_save_out_op_not.set_sensitive(True)
@@ -1274,9 +1367,9 @@ class toolbox:
         else:
             sortie=0
         dialogue.destroy()
-        if sortie: os.system("cp \""+fktb_path+"tmp/result_opnot\" \""+sortie+"\"")
+        if sortie: os.system("cp \"%s/tmp/result_opnot\" \"" % FKTB_PATH + sortie + "\"")
 
-    # XOR
+# XOR
 
     def xor(self, widget):
         # Buffer et texte d'entrée
@@ -1347,7 +1440,7 @@ class toolbox:
                     else:
                         txtbuf_sortie_xor.insert(start_iter_sortie_xor, ''.join(data).rstrip(' '))
 
-                    # VIGENERE
+# VIGENERE
 
     def vigenere(self, widget, mode):
         """Chiffre de Vigenère"""
@@ -1401,7 +1494,7 @@ class toolbox:
             i=i+1
         txtbuf_sortie_vigenere.insert(start_iter_sortie_vigenere, str_crypted)
 
-    # AUTRES
+# AUTRES
 
     def runAsRoot(self, parent, module):
         for su_gui_cmd in ['gksu','kdesu','ktsuss','beesu','gnome-terminal','xterm','']:
@@ -1424,7 +1517,7 @@ class toolbox:
             head, ret = cnx.request(url, method.upper(), urlencode(data), headers = headers)
         return ret
 
-    # Interface graphique :
+# Interface graphique :
 
     def quitDialog(self, widget, data):
         if self.yesnoDialog("Voulez-vous vraiment quitter\nla Free-knowledge Toolbox ?"): delete()
@@ -1502,7 +1595,7 @@ class toolbox:
         dialogue.destroy()
 
         if sortie != 0:
-            os.system("cp \""+fktb_path+"tmp/result_stega.png\" \""+sortie+"\"")
+            os.system("cp \"%s/tmp/result_stega.png\" \"" % FKTB_PATH + sortie + "\"")
 
     def dialogueFichierStega(self, parent):
         # On efface les éventuelles images
@@ -1713,7 +1806,7 @@ class toolbox:
         self.aide_regex_win.set_transient_for(self.fenetre)
         self.aide_regex_win.set_resizable(True)
         self.aide_regex_win.set_title("Aide regex") # Titre de la fenêtre
-        self.aide_regex_win.set_icon_from_file(fktb_path+"images/icone.png") # Spécifie une icône
+        self.aide_regex_win.set_icon_from_file("%s/images/icone.png" % FKTB_PATH) # Spécifie une icône
         self.aide_regex_win.set_position(gtk.WIN_POS_CENTER_ON_PARENT) # Centrer la fenêtre au lancement
         self.aide_regex_win.set_border_width(0)
         self.aide_regex_win.set_size_request(700, 300) # Taille de la fenêtre
@@ -1764,7 +1857,7 @@ class toolbox:
         about_win.set_transient_for(self.fenetre)
         about_win.set_resizable(False)
         about_win.set_title("À Propos ...") # Titre de la fenêtre
-        about_win.set_icon_from_file(fktb_path+"images/icone.png") # Spécifie une icône
+        about_win.set_icon_from_file("%s/images/icone.png" % FKTB_PATH) # Spécifie une icône
         about_win.set_position(gtk.WIN_POS_CENTER_ON_PARENT) # Centrer la fenêtre au lancement
         about_win.set_border_width(0)
         about_win.set_size_request(430, 340) # Taille de la fenêtre
@@ -1772,7 +1865,7 @@ class toolbox:
         fixed_about = gtk.Fixed()
 
         img_a_propos = gtk.Image()
-        img_a_propos.set_from_file(fktb_path+"images/a_propos.png")
+        img_a_propos.set_from_file("%s/images/a_propos.png" % FKTB_PATH)
         img_a_propos.show()
 
         fixed_about.put(img_a_propos, 0, 0)
@@ -1783,7 +1876,7 @@ class toolbox:
         lab_auteurs = gtk.Label("Auteurs :\n\n  Julien Deudon (initbrain)\n  Geoffrey Robert (mks)")
         fixed_about.put(lab_auteurs, 20, 160)
 
-        lab_contrib = gtk.Label("Contributeurs :\n\n  Laura Henrion\n  Mathieu Bonnet\n  Sylvain Ciacnoghi (TheStyx)")
+        lab_contrib = gtk.Label("Contributeurs :\n\n  Mathieu D. (MatToufoutu)\n  Laura Henrion\n  Mathieu Bonnet\n  Sylvain Ciacnoghi (TheStyx)")
         fixed_about.put(lab_contrib, 220, 160)
 
         lab_contact = gtk.Label("Site :\nMail :")
@@ -1821,7 +1914,7 @@ class toolbox:
         boite_ev_gpl.show()
 
         gpl = gtk.Image()
-        gpl.set_from_file(fktb_path+"images/logo_gpl_v3.png")
+        gpl.set_from_file("%s/images/logo_gpl_v3.png" % FKTB_PATH)
         boite_ev_gpl.add(gpl)
         gpl.show()
 
@@ -1832,11 +1925,27 @@ class toolbox:
         about_win.show_all()
 
     def menuChoice(self, parent):
-        try: choix = self.treestore_menu.get_value(self.treeview_menu.get_selection().get_selected()[1], 0)
-        except TypeError: pass
+        try:
+            choix = self.treestore_menu.get_value(self.treeview_menu.get_selection().get_selected()[1], 0)
+        except TypeError:
+            pass
         else:
-            for fils in self.bloc_tabs.get_children():
-                if choix == self.bloc_tabs.get_tab_label_text(fils): self.bloc_tabs.set_current_page(self.bloc_tabs.page_num(fils))
+            #TODO modules en développement ...
+            if choix in ["ARP",
+                         "ICMP/SYN Scan",
+                         "Whois",
+                         "Dig",
+                         "IPv4 Subnets",
+                         "IPv6 Subnets",
+                         "tcpdump",
+                         "tcptrack",
+                         "tcpflow",
+                         "Connections Monitoring"]:
+                self.bloc_tabs.set_current_page(0)
+            else:
+                for fils in self.bloc_tabs.get_children():
+                    if choix == self.bloc_tabs.get_tab_label_text(fils):
+                        self.bloc_tabs.set_current_page(self.bloc_tabs.page_num(fils))
 
     def tabBuilder(self): # Créer un nouveau bloc-notes, définir la position des onglets
     # Notebook du contenu
@@ -1858,6 +1967,24 @@ class toolbox:
         self.bloc_tabs.set_show_tabs(0)
 
         self.fenetre.show_all()
+
+    def tabIndisp(self): # TAB Indisponible
+    # Boites 1 & 2
+        boite1_indisp = gtk.VBox(True, 5)
+        boite1_indisp.show()
+        boite2_indisp = gtk.HBox(True, 5)
+        boite1_indisp.pack_start(boite2_indisp, False, False, 0)
+        boite2_indisp.show()
+
+        # label_titre_indisp
+        label_titre_indisp = gtk.Label("")
+        label_titre_indisp.set_markup("<big><b>module en cours de développement</b></big>")
+        label_titre_indisp.set_alignment(0,5)
+        boite2_indisp.pack_start(label_titre_indisp, False, False, 0)
+        label_titre_indisp.show()
+
+        # Affichage
+        self.bloc_tabs.insert_page(boite1_indisp, gtk.Label("Indisponible"), -1)
 
     def tabAccueil(self): # TAB Accueil
     # Boites 1 & 2
@@ -1898,9 +2025,9 @@ class toolbox:
 
         # image_laptop
         image_laptop = gtk.Image()
-        #        image_laptop.set_from_file(fktb_path+"images/laptop.png")
+        #        image_laptop.set_from_file("%s/images/laptop.png" % FKTB_PATH)
         #        image_laptop.set_pixel_size(10)
-        pixbuf_laptop = gtk.gdk.pixbuf_new_from_file_at_size(fktb_path+"images/white_hat.svg", int(boite1_accueil.size_request()[0]), -1)
+        pixbuf_laptop = gtk.gdk.pixbuf_new_from_file_at_size("%s/images/white_hat.svg" % FKTB_PATH, int(boite1_accueil.size_request()[0]), -1)
         image_laptop.set_from_pixbuf(pixbuf_laptop)
         boite_evenement_laptop.add(image_laptop)
         boite_evenement_laptop.set_visible_window(False)
@@ -1916,19 +2043,19 @@ class toolbox:
         boite3_accueil.pack_start(boite4_accueil, False, False, 0)
         boite4_accueil.show()
 
-        # btn_check_update
-        btn_check_update = gtk.Button("Vérifier les mises à jour")
-        btn_check_update.set_size_request(int(btn_check_update.size_request()[0]*1.1),btn_check_update.size_request()[1])
-        boite4_accueil.pack_end(btn_check_update, False, False, 0)
-        btn_check_update.connect("clicked", lambda e: thread.start_new_thread(self.checkUpdate, ()))
-        btn_check_update.show()
+        # # btn_check_update
+        # btn_check_update = gtk.Button("Vérifier les mises à jour")
+        # btn_check_update.set_size_request(int(btn_check_update.size_request()[0]*1.1),btn_check_update.size_request()[1])
+        # boite4_accueil.pack_end(btn_check_update, False, False, 0)
+        # btn_check_update.connect("clicked", lambda e: thread.start_new_thread(self.checkUpdate, ()))
+        # btn_check_update.show()
 
         # On crée une boîte à évènement et on l'ajoute à la fenêtre principale
         boite_evenement_april = gtk.EventBox()
 
         # image_april
         image_april = gtk.Image()
-        image_april.set_from_file(fktb_path+"images/logo_april.png")
+        image_april.set_from_file("%s/images/logo_april.png" % FKTB_PATH)
         boite_evenement_april.add(image_april)
         image_april.show()
 
@@ -2240,7 +2367,7 @@ class toolbox:
         self.btn_calc_hash.show()
 
         # self.img_calc_hash
-        buf_anim_hash = gtk.gdk.PixbufAnimation(fktb_path+"images/attente.gif")
+        buf_anim_hash = gtk.gdk.PixbufAnimation("%s/images/attente.gif" % FKTB_PATH)
         self.img_calc_hash = gtk.Image()
         self.img_calc_hash.set_from_animation(buf_anim_hash)
         boite4_hash.pack_start(self.img_calc_hash, True, False, 0)
@@ -2961,7 +3088,7 @@ class toolbox:
         boite9_c_rgb.pack_end(self.boite_evenement_enr_result_c_rgb, False, False, 0)
         # self.image_enr_result_c_rgb
         self.image_enr_result_c_rgb = gtk.Image()
-        self.image_enr_result_c_rgb.set_from_file(fktb_path+"images/enregistrer.png")
+        self.image_enr_result_c_rgb.set_from_file("%s/images/enregistrer.png" % FKTB_PATH)
         self.boite_evenement_enr_result_c_rgb.add(self.image_enr_result_c_rgb)
         self.image_enr_result_c_rgb.show()
         # On relie une action à la boîte
@@ -3702,77 +3829,6 @@ class toolbox:
         # Affichage
         self.bloc_tabs.insert_page(boite1_hostname, gtk.Label("Hostname Resolver"), -1)
 
-    def wifiView(self):
-        iface=self.combo_iface_wifi.get_active_text().split()[0]
-
-        if self.enCoursWifi:
-            self.enCoursWifi=0
-            self.btn_wifi.set_label("Start")
-        elif not getoutput("which iw"):
-            os_info=getoutput("uname -a").lower()
-            alert="Un outils est nécessaire, veuillez l'installer :\niw - tool for configuring Linux wireless devices"
-            alert+=''.join(["\n\n# apt-get install iw" for os in "backtrack","debian","ubuntu","mint","voyager" if os in os_info and not "apt-get" in alert])
-            alert+=''.join(["\n\n# yum install iw\n(à vérifier)" for os in "fedora","centos" if os in os_info and not "yum" in alert])
-            gtk.gdk.threads_enter()
-            self.msgbox(alert,1)
-            gtk.gdk.threads_leave()
-        elif "(-19)" in getoutput("iw "+iface+" info"):
-            gtk.gdk.threads_enter()
-            self.btn_wifi.set_label("Start")
-            self.msgbox("Veuillez sélectionner une interface Wi-Fi !",1)
-            gtk.gdk.threads_leave()
-            self.enCoursWifi=0
-        else:
-            # Vérification des permissions
-            for su_gui_cmd in ['gksu','kdesu','ktsuss','beesu','']:
-                if getoutput("which "+su_gui_cmd): break
-            if not su_gui_cmd:
-                gtk.gdk.threads_enter()
-                self.msgbox("Un des outils suivant est nécessaire pour acquérir les droits administrateur, veuillez en installer un :\n\ngksu\nkdesu\nktsuss\nbeesu",1)
-                gtk.gdk.threads_leave()
-            else:
-                self.enCoursWifi=1
-                thread.start_new_thread(self.runProgressbarWifi, ())
-                self.btn_wifi.set_label("Stop")
-                self.progressbarWifi.set_text("Scan en cours ...")
-
-                rssiMin=-120
-                rssiMax=-30
-                while self.enCoursWifi and su_gui_cmd:
-                    iwOut=getoutput(su_gui_cmd+" iw dev "+iface+" scan")
-
-                    if not iwOut:
-                        continue
-                    if "(-1)" in iwOut:
-                        gtk.gdk.threads_enter()
-                        self.btn_wifi.set_label("Start")
-                        self.msgbox("Nécessite d'être lancé en tant qu'administrateur !",1)
-                        gtk.gdk.threads_leave()
-                        self.enCoursWifi=0
-                    elif "(-100)" in iwOut:
-                        gtk.gdk.threads_enter()
-                        self.btn_wifi.set_label("Start")
-                        self.msgbox("L'interface Wi-Fi séléctionnée est désactivée !",1)
-                        gtk.gdk.threads_leave()
-                        self.enCoursWifi=0
-                    else:
-                        res = re.compile('BSS ([\w\d\:]+).*\n.*\n.*\n.*\n.*\n\tsignal: ([-\.\d]+) dBm\n\tlast seen: (\d+) ms ago\n\tSSID: (.*)\n', re.MULTILINE).findall(iwOut)
-                        if len(res)!=len(re.compile('signal: ([-\.\d]+ dBm)\n', re.MULTILINE).findall(iwOut)): print "Problème !"
-
-                        for x in res:
-                            found=0
-                            apIter=self.liststore_wifi.get_iter_first() # None quand liststore vide
-                            while apIter:
-                                if self.liststore_wifi.get_value(apIter, 1) == x[0]:
-                                    self.liststore_wifi.set(apIter, 2, x[1], 3, int((float(x[1])-rssiMin))*100/(rssiMax-rssiMin)) # Modifier une ligne
-                                    if int(x[2])>5000: self.liststore_wifi.set(apIter, 2, '', 3, 0) # Modifier une ligne
-                                    found=1
-                                apIter=self.liststore_wifi.iter_next(apIter)
-                            else:
-                                if not found:
-                                    self.liststore_wifi.append([x[3],x[0],x[1],int((float(x[1])-rssiMin))*100/(rssiMax-rssiMin)])
-                                    print int((float(x[1])-rssiMin))*100/(rssiMax-rssiMin)
-
     def tabWifi(self): # TAB Wi-Fi
     # boites
         boite1_wifi = gtk.VBox(False, 5)
@@ -3819,7 +3875,7 @@ class toolbox:
         self.btn_wifi = gtk.Button("Start")
         self.btn_wifi.set_size_request(int(self.btn_wifi.size_request()[0]*1.1),self.btn_wifi.size_request()[1])
         boite2_wifi.pack_start(self.btn_wifi, False, False, 0)
-        self.btn_wifi.connect("clicked", lambda e: thread.start_new_thread(self.wifiView, ()))
+        self.btn_wifi.connect("clicked", lambda e: thread.start_new_thread(wifi.wifiView, (self,)))
         self.btn_wifi.show()
 
         self.enCoursWifi=0
@@ -3872,11 +3928,11 @@ class toolbox:
                 rssiMin=-120
                 rssiMax=-30
 
-                t_airodump = thread.start_new_thread(getstatusoutput, (su_gui_cmd+" \"airodump-ng "+iface+" --write '"+fktb_path+"tmp/airodump-ng' --output-format csv -u 1\"",))
+                t_airodump = thread.start_new_thread(getstatusoutput, (su_gui_cmd+" \"airodump-ng "+iface+" --write '%s/tmp/airodump-ng' --output-format csv -u 1\"" % FKTB_PATH,))
 
                 while self.enCoursWifi2 and su_gui_cmd:
                     try:
-                        with open(fktb_path+"tmp/airodump-ng-01.csv", 'rb') as f:
+                        with open("%s/tmp/airodump-ng-01.csv" % FKTB_PATH, 'rb') as f:
                             reader = csv.reader(f)
                             for x in reader:
                                 if x:
@@ -4229,7 +4285,7 @@ class toolbox:
         # self.btn_barCode
         self.btn_barCode = gtk.Button("ouvrir")
         self.btn_barCode.set_size_request(int(self.btn_barCode.size_request()[0]*1.2),self.btn_barCode.size_request()[1])
-        self.btn_barCode.connect("clicked", lambda e: subprocess.Popen(("python",fktb_path+"lib/other/zbar.py"), stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+        self.btn_barCode.connect("clicked", lambda e: subprocess.Popen(("python","%s/lib/other/zbar.py" % FKTB_PATH), stdout=subprocess.PIPE, stderr=subprocess.PIPE))
         boite1_barCode.pack_start(self.btn_barCode, False, False, 0)
         self.btn_barCode.show()
 
@@ -4343,7 +4399,7 @@ class toolbox:
         # self.btn_geoloc
         self.btn_geoloc = gtk.Button("Lancer la géolocalisation")
         self.btn_geoloc.set_size_request(int(self.btn_geoloc.size_request()[0]*1.2),self.btn_geoloc.size_request()[1])
-        self.btn_geoloc.connect('clicked', lambda e: thread.start_new_thread(self.geoloc, ()))
+        self.btn_geoloc.connect('clicked', lambda e: thread.start_new_thread(google.geoloc, (self,)))
         boite2_geoloc.pack_start(self.btn_geoloc, True, True, 0)
         self.btn_geoloc.show()
 
@@ -4377,87 +4433,12 @@ class toolbox:
             self.statuGeolocLoop=True
             self.btn2_geoloc.set_label("stop")
             while self.statuGeolocLoop:
-                self.geoloc()
+                google.geoloc(self)
                 sleep(5)
-
-    def geoloc(self):
-        """Google Wi-Fi Positioning System"""
-
-        iface=self.combo_iface_geoloc.get_active_text().split()[0]
-
-        if not getoutput("which iw"):
-            os_info=getoutput("uname -a").lower()
-            alert="Un outils est nécessaire, veuillez l'installer :\niw - tool for configuring Linux wireless devices"
-            alert+=''.join(["\n\n# apt-get install iw" for os in "backtrack","debian","ubuntu","mint","voyager" if os in os_info and not "apt-get" in alert])
-            alert+=''.join(["\n\n# yum install iw\n(à vérifier)" for os in "fedora","centos" if os in os_info and not "yum" in alert])
-            gtk.gdk.threads_enter()
-            self.msgbox(alert,1)
-            gtk.gdk.threads_leave()
-        else:
-            self.btn_geoloc.set_sensitive(False)
-            self.btn_geoloc.set_label("Scan des réseaux Wi-Fi à proximité ...")
-
-            # Vérification des permissions
-            for su_gui_cmd in ['gksu','kdesu','ktsuss','beesu','']:
-                if getoutput("which "+su_gui_cmd): break
-            if not su_gui_cmd:
-                gtk.gdk.threads_enter()
-                self.msgbox("Un des outils suivant est nécessaire pour acquérir les droits administrateur, veuillez en installer un :\n\ngksu\nkdesu\nktsuss\nbeesu",1)
-                gtk.gdk.threads_leave()
-            else: iwOut=getoutput(su_gui_cmd+" iw dev "+iface+" scan")
-
-            if "failed" in iwOut:
-                if not self.statuGeolocLoop:
-                    self.statuGeolocLoop=False
-                    self.btn_geoloc.set_label("Lancer la géolocalisation")
-                    self.btn_geoloc.set_sensitive(True)
-                    gtk.gdk.threads_enter()
-                    self.msgbox("Le scan des réseaux Wi-Fi a échoué.\n\nVérifiez votre carte réseau sans fils !",1)
-                    gtk.gdk.threads_leave()
-                else: self.btn_geoloc.set_label("Echec du scan, nouvel essai dans 5 secondes ...")
-            else:
-                result=re.compile("BSS ([\w\d\:]+).*\n.*\n.*\n.*\n.*\n\tsignal: ([-\d]+)", re.MULTILINE).findall(iwOut)
-
-                self.btn_geoloc.set_label("Génération de la requête ...")
-
-                loc_req={ "version":"1.1.0",
-                          "request_address":False,
-                          #"addresults_language":"fr",
-                          "wifi_towers":[{"mac_address":x[0].replace(":","-"),"signal_strength":int(x[1])} for x in result]
-                }
-
-                #print '\n'.join([l.rstrip() for l in simplejson.dumps(loc_req, sort_keys=True, indent=4*' ').splitlines()])
-
-                self.btn_geoloc.set_label("Envoi de la requête à Google ...")
-
-                data = simplejson.JSONEncoder().encode(loc_req)
-                try: output = simplejson.loads(urllib2.urlopen('https://www.google.com/loc/json', data).read())
-                except:
-                    if not self.statuGeolocLoop:
-                        self.statuGeolocLoop=False
-                        self.btn_geoloc.set_label("Lancer la géolocalisation")
-                        self.btn_geoloc.set_sensitive(True)
-                        gtk.gdk.threads_enter()
-                        self.msgbox("Impossible d'envoyer la requête :\nla connexion avec l'API Google a échoué.\n\nVérifiez votre connexion internet !",1)
-                        gtk.gdk.threads_leave()
-                    else: self.btn_geoloc.set_label("Echec d'envoi, nouvel essai dans 5 secondes")
-                else:
-                    pb = gtk.gdk.pixbuf_new_from_file_at_size(fktb_path+"images/icone.png", 24,24)
-                    try:
-                        self.osm.image_add(output["location"]["latitude"], output["location"]["longitude"], pb)
-                        self.osm.set_center_and_zoom(output["location"]["latitude"], output["location"]["longitude"], 16)
-                    except: pass
-                    else:
-                        self.liststore_geoloc.append(("["+strftime('%H:%M:%S', localtime())+"]", "longitude : "+str(output["location"]["longitude"])+", latitude : "+str(output["location"]["latitude"])))
-                        if not self.statuGeolocLoop:
-                            self.btn_geoloc.set_label("Lancer la géolocalisation")
-                            self.btn_geoloc.set_sensitive(True)
-                        else:
-                            self.btn_geoloc.set_label("Ok, prochaine géolocalisation dans 5 secondes")
 
     def tabPrincipale(self):
         """Définir la page d'ouverture (TAB 1 : Accueil)"""
-        self.bloc_tabs.set_current_page(0)
+        self.bloc_tabs.set_current_page(1)
 
     def tabMenu(self):
     # Boite du menu
@@ -4473,16 +4454,20 @@ class toolbox:
         self.treestore_menu = gtk.TreeStore(str)
         self.treestore_menu.append(None, ["Accueil"])
 
-        # Catégories
-        categories = {"Cryptographie":("Calcul d'empreintes", "Chiffre de César", "Chiffre de Vigenère", "Chiffrement XOR", "Opérateur NOT", "Recherche MD5", "Substitution\nmono-alphabétique"),
-                      "Stéganographie":("Couches RVB"),
-                      "Divers":("Commande strings", "Conversion de base", "Mail \"Anonyme\"", "Regex WEB", "Traducteur ASM", "Moniteur de fichier", "Password Strenght", "Code-barres", "Google Wi-Fi\nPositioning System"),
-                      "Réseau":("Hostname Resolver","Wi-Fi Scanner","Wi-Fi Scanner 2")}
+        json_data=open(os.path.join(CONFIG_PATH, 'modules.json'))
+        data = simplejson.load(json_data)
+        json_data.close()
 
-        for nom_cat in categories.keys():
-            parent = self.treestore_menu.append(None, [nom_cat])
-            if type(categories[nom_cat])==tuple: [self.treestore_menu.append(parent, [module]) for module in categories[nom_cat]]
-            else : self.treestore_menu.append(parent, [categories[nom_cat]])
+        #TODO chargement des tab via arborescence de fichier basé sur cet exemple en commentaire :
+        # import unicodedata
+        # import re
+        for category in data.keys():
+            # print re.sub(' |-|\'|/', '_', unicodedata.normalize('NFKD', unicode(category)).encode('ascii', 'ignore').lower())
+            if type(data[category]) == type(list()) and len(data[category]) >= 1:
+            # for module in data[category]:
+            # print re.sub(' |-|\'|/', '_', unicodedata.normalize('NFKD', unicode(module['name'])).encode('ascii', 'ignore').lower())
+                parent = self.treestore_menu.append(None, [category])
+                [self.treestore_menu.append(parent, [module['name']]) for module in data[category]]
 
         self.treeview_menu = gtk.TreeView(self.treestore_menu)
         self.treeview_menu.append_column(gtk.TreeViewColumn(None, gtk.CellRendererText(), text=0))
@@ -4516,7 +4501,7 @@ class toolbox:
         self.fenetre.set_resizable(True)            # Autoriser le redimensionnement de la fenêtre
         self.fenetre.set_title("Free-knowledge Toolbox")    # Titre de la fenêtre
         #self.fenetre.set_decorated(False)            # Cacher les contours de la fenêtre
-        self.fenetre.set_icon_from_file(fktb_path+"images/icone.png")    # Spécifie une icône
+        self.fenetre.set_icon_from_file("%s/images/icone.png" % FKTB_PATH)    # Spécifie une icône
         self.fenetre.set_position(gtk.WIN_POS_CENTER)        # Centrer la fenêtre au lancement
         self.fenetre.set_border_width(10)            # Largueur de la bordure intérieur
         self.fenetre.set_size_request(800, 500)            # Taille de la fenêtre
@@ -4527,6 +4512,7 @@ class toolbox:
         self.fullscreen=0
 
         self.tabBuilder()        # Construction du notebook pour le contenu
+        self.tabIndisp()           # Pade d'indisponibilité
         self.tabAccueil()        # Page d'accueil
         self.tabCesar()            # Page du module César
         self.tabSubstMonoAlpha()    # Page du module Substitution mono-alphabétique
@@ -4554,6 +4540,7 @@ class toolbox:
         #self.tabMailAccountChecker()    # Page du module de test de compte mail                            À venir ?
 
         self.tabMenu()
+        self.tabPrincipale()
         self.getWIface()
 
         gtk.main()
@@ -4569,7 +4556,7 @@ class toolbox:
 def delete():
     """Gestion des evenements de fermeture"""
     # Dès qu'on quitte : suppression des fichiers result_stega.png & result_opnot s'ils existent
-    [os.remove(fktb_path+"tmp/"+i) for i in ['result_stega.png','result_opnot', 'airodump-ng-01.csv'] if os.path.exists(fktb_path+"tmp/"+i)]
+    [os.remove("%s/tmp/" % FKTB_PATH + i) for i in ['result_stega.png','result_opnot', 'airodump-ng-01.csv'] if os.path.exists("%s/tmp/" % FKTB_PATH + i)]
 
     # TODO tuer le process airodump-ng si celui-ci est lancé via la module wifi 2
     # Vérification des permissions
@@ -4582,104 +4569,8 @@ def delete():
     exit() # but gtk.main_quit() fail with KeyboardInterrupt ...
 
 def main():
-    # Gestion des importations
-
-    import_error = ""                                # Variable de stockage des erreurs d'importation
-
-    import smtplib                                # <-
-    from email.MIMEMultipart import MIMEMultipart                #  |
-    from email.MIMEBase import MIMEBase                    #  Module utilisés pour l'envoi de mail
-    from email.MIMEText import MIMEText                    #  |
-    from email.Utils import COMMASPACE, formatdate                #  |
-    from email import Encoders
-
-    # Modules utilisés pour l'interface graphique
-    try:
-        import pygtk
-    except ImportError:
-        import_error += "\npygtk 2.3.90 ou ultérieur"
-    try:
-        import gtk
-    except ImportError:
-        import_error += "\ngtk"
-    else:
-        if gtk.pygtk_version < (2, 3, 90) and import_error == "":
-            import_error += "\npygtk 2.3.90 ou ultérieur"
-
-    try: import httplib2                            # Module utilisé pour effectuer des requêtes HTTP
-    except ImportError: import_error += "\nhttplib2"
-    try: import Image                            # Module utilisé par le module Couche RVB (stéganographie)
-    except ImportError: import_error += "\nPIL (Image)"
-    try: import re                                # Module utilisé pour le parsage (expressions rationnelles)
-    except ImportError: import_error += "\nre"
-    try: import webbrowser                            # Module permettant d'ouvrir le navigateur web
-    except ImportError: import_error += "\nwebbrowser"
-    try: from commands import getoutput, getstatusoutput            # Module utilisé pour récupérer la sortie d'une commande
-    except ImportError: import_error += "\ncommands"
-    try: import hashlib                            # Module utilisé pour le hashage de textes ou fichiers
-    except ImportError: import_error += "\nhashlib"
-    try: import thread                            # Module pour le multithreading
-    except ImportError: import_error += "\nthread"
-    try: import subprocess                            # Module permettant de créer des sous-processus
-    except ImportError: import_error += "\nsubprocess"
-    try: from urllib import urlencode                    # Module utilisé pour encoder des paramètres dans une URL
-    except ImportError: import_error += "\nurllib"
-    try: import urllib2                            # Module utilisé pour envoyer des requete aux API Google
-    except ImportError: import_error += "\nurllib2"
-    try: from time import *                            # Modules pour la vitesse du mouvement de la progressbar et
-    except ImportError: import_error += "\ntime"                # le calcul du temps pris par un traitement
-
-    try: import os                                # Module utilisé pour éxecuter des commandes
-    except ImportError: import_error += "\nos"                # et récupérer des informations d'environnement
-
-    try: import pynotify                            # Module utilisé pour afficher des notifications
-    except ImportError: import_error += "\npython-notify"
-
-    try: import simplejson                            # <-
-    except ImportError: import_error += "\nsimplejson"            #  |
-    try: import sys                                #  |
-    except ImportError: import_error += "\nsys"                #  Modules utilisés pour la géolocalisation
-    try: import os.path                            #  |
-    except ImportError: import_error += "\nos.path"                #  |
-    try: import gobject                            #  |
-    except ImportError: import_error += "\ngobject"                # <-
-
-    try:
-        #Try static lib first
-        mydir = os.path.dirname(os.path.abspath(__file__))
-        libdir = os.path.abspath(os.path.join(mydir, "..", "python", ".libs"))
-        sys.path.insert(0, libdir)
-
-        import osmgpsmap                        # Module utilisé pour afficher une OpenStreetMap
-    except ImportError: import_error += "\nosmgpsmap"
-    #else: print "Utilisation de osmgpsmap : %s (version %s)" % (osmgpsmap.__file__, osmgpsmap.__version__)
-
-    try: import csv                                # Module utilisé pour lire les logs de airodump-ng
-    except ImportError: import_error += "\ncsv"
-
-    # Gestion des éventuelles erreurs d'importation
-
-    if import_error != "":
-        print "Il est nécessaire de posséder les librairies suivantes pour faire fonctionner cette boîte à outils :" + import_error
-        raise SystemExit
-
-    # Configurations
-
-    gtk.gdk.threads_init() # Important : initialisation pour l'utilisation de threads
-    gtk.gdk.threads_enter()
-
-    #TODO voir les emplacements ne sont plus les même
-    # Chemin des dossiers "images" & "tmp"
-    if os.path.dirname(__file__) and os.path.dirname(__file__)[0] != "/":
-        fktb_path = os.getcwd() + "/" + os.path.dirname(__file__) + "/"
-    elif os.path.dirname(__file__):
-        fktb_path = os.path.dirname(__file__) + "/"
-    else:
-        fktb_path = os.getcwd() + "/"
-
     # Exécution
-    try: toolbox()
-    except (KeyboardInterrupt, SystemExit): delete()
-
-if __name__ == "__main__":
-    main()
+    try:
+        toolbox()
+    except (KeyboardInterrupt, SystemExit):
+        delete()
